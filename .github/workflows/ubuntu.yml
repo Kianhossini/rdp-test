@@ -1,4 +1,4 @@
-name: Ubuntu-Tailscale-3xUI
+name: Ubuntu-Tailscale-Panel
 
 on:
 workflow_dispatch:
@@ -9,53 +9,73 @@ runs-on: ubuntu-latest
 timeout-minutes: 360
 
 steps:
-  - name: Install packages
+
+  - name: Update packages
     run: |
       sudo apt update
-      sudo apt install -y curl wget git openssh-server
+      sudo DEBIAN_FRONTEND=noninteractive apt install -y \
+      curl wget git openssh-server sudo
 
   - name: Install Tailscale
     run: |
       curl -fsSL https://tailscale.com/install.sh | sh
 
-  - name: Start Tailscale
+  - name: Connect Tailscale
     run: |
       sudo tailscale up \
-      --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} \
-      --hostname=gh-panel-${{ github.run_id }}
+      --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" \
+      --hostname="gh-${{ github.run_id }}"
 
-  - name: Enable SSH Service
+  - name: Enable SSH
     run: |
       sudo systemctl enable ssh
       sudo systemctl restart ssh
 
-  - name: Set root password + enable root login
+  - name: Enable Root Login
     run: |
+
       echo "root:123456" | sudo chpasswd
 
-      sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-      sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+      sudo sed -i \
+      's/^#\?PermitRootLogin.*/PermitRootLogin yes/' \
+      /etc/ssh/sshd_config
+
+      sudo sed -i \
+      's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' \
+      /etc/ssh/sshd_config
 
       sudo systemctl restart ssh
 
   - name: Install 3x-ui
     run: |
-      curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh | sudo bash
+      curl -Ls \
+      https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh \
+      | sudo bash
 
-  - name: Show connection info
+  - name: Show Info
     run: |
+
       echo "========== TAILSCALE IP =========="
       tailscale ip -4
 
+      echo ""
       echo "========== SSH =========="
       echo "ssh root@$(tailscale ip -4)"
 
-      echo "========== PANEL =========="
-      sudo x-ui setting
+      echo ""
+      echo "========== X-UI STATUS =========="
 
-  - name: Keep alive
+      sudo systemctl status x-ui --no-pager || true
+
+      echo ""
+      echo "Run this after SSH:"
+      echo "x-ui"
+
+  - name: Keep Alive
     run: |
-      while true; do
-        echo "alive $(date)"
+
+      while true
+      do
+        echo "running $(date)"
         sleep 300
       done
