@@ -1,45 +1,61 @@
-name: Ubuntu-Tailscale-Panel
+name: Ubuntu-Tailscale-3xUI
 
 on:
-  workflow_dispatch:
+workflow_dispatch:
 
 jobs:
-  panel:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
+panel:
+runs-on: ubuntu-latest
+timeout-minutes: 360
 
-    steps:
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y curl wget git
+steps:
+  - name: Install packages
+    run: |
+      sudo apt update
+      sudo apt install -y curl wget git openssh-server
 
-      - name: Install Tailscale
-        run: |
-          curl -fsSL https://tailscale.com/install.sh | sh
+  - name: Install Tailscale
+    run: |
+      curl -fsSL https://tailscale.com/install.sh | sh
 
-      - name: Start Tailscale
-        run: |
-          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-panel-${{ github.run_id }}
+  - name: Start Tailscale
+    run: |
+      sudo tailscale up \
+      --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} \
+      --hostname=gh-panel-${{ github.run_id }}
 
-      - name: Install SSH
-        run: |
-          sudo apt install -y openssh-server
-          sudo service ssh start
+  - name: Enable SSH Service
+    run: |
+      sudo systemctl enable ssh
+      sudo systemctl restart ssh
 
-      - name: Create user
-        run: |
-          sudo useradd -m sanaei
-          echo "sanaei:123456" | sudo chpasswd
-          sudo usermod -aG sudo sanaei
+  - name: Set root password + enable root login
+    run: |
+      echo "root:123456" | sudo chpasswd
 
-      - name: Show IP
-        run: |
-          tailscale ip -4
+      sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+      sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
 
-      - name: Keep alive
-        run: |
-          while true; do
-            echo "running $(date)"
-            sleep 300
-          done
+      sudo systemctl restart ssh
+
+  - name: Install 3x-ui
+    run: |
+      curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh | sudo bash
+
+  - name: Show connection info
+    run: |
+      echo "========== TAILSCALE IP =========="
+      tailscale ip -4
+
+      echo "========== SSH =========="
+      echo "ssh root@$(tailscale ip -4)"
+
+      echo "========== PANEL =========="
+      sudo x-ui setting
+
+  - name: Keep alive
+    run: |
+      while true; do
+        echo "alive $(date)"
+        sleep 300
+      done
