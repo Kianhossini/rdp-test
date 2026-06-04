@@ -1,18 +1,18 @@
-name: Ubuntu-Tailscale
+name: Ubuntu-Tailscale-Panel
 
 on:
   workflow_dispatch:
 
 jobs:
-  ubuntu-session:
+  panel:
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
     steps:
-      - name: Update system
+      - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y curl wget
+          sudo apt install -y curl wget git
 
       - name: Install Tailscale
         run: |
@@ -20,15 +20,26 @@ jobs:
 
       - name: Start Tailscale
         run: |
-          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-${{ github.run_id }}
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-panel-${{ github.run_id }}
 
-      - name: Get IP
+      - name: Install SSH
+        run: |
+          sudo apt install -y openssh-server
+          sudo service ssh start
+
+      - name: Create user
+        run: |
+          sudo useradd -m sanaei
+          echo "sanaei:123456" | sudo chpasswd
+          sudo usermod -aG sudo sanaei
+
+      - name: Show IP
         run: |
           tailscale ip -4
 
       - name: Keep alive
         run: |
           while true; do
-            echo "running: $(date)"
+            echo "running $(date)"
             sleep 300
           done
