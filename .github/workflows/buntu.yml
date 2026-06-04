@@ -40,6 +40,12 @@ jobs:
           sudo systemctl restart x-ui
           sleep 3
 
+      - name: Check x-ui Status
+        run: |
+          sudo systemctl status x-ui || true
+          sudo x-ui status || true
+          ss -tlnp | grep 2053 || echo "Port 2053 not listening!"
+
       - name: Show Info
         run: |
           TAILSCALE_IP=$(tailscale ip -4)
