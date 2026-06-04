@@ -38,25 +38,38 @@ jobs:
           sleep 5
           sudo systemctl enable x-ui
           sudo systemctl restart x-ui
-          sleep 3
+          sleep 5
 
       - name: Check x-ui Status
         run: |
+          echo "======= SERVICE STATUS ======="
           sudo systemctl status x-ui || true
-          sudo x-ui status || true
-          ss -tlnp | grep 2053 || echo "Port 2053 not listening!"
+          echo ""
+          echo "======= LISTENING PORTS ======="
+          ss -tlnp | grep x-ui || true
+          echo ""
+          echo "======= ALL OPEN PORTS ======="
+          ss -tlnp
+          echo ""
+          echo "======= X-UI SETTINGS ======="
+          sudo x-ui setting -show || true
+          echo ""
+          echo "======= X-UI LOGS ======="
+          sudo journalctl -u x-ui -n 30 --no-pager || true
 
       - name: Show Info
         run: |
           TAILSCALE_IP=$(tailscale ip -4)
+          PORT=$(sudo x-ui setting -show 2>/dev/null | grep -i port | head -1 | grep -oP '\d{4,5}' || echo "unknown")
+          WEBPATH=$(sudo x-ui setting -show 2>/dev/null | grep -i path | head -1 | awk '{print $NF}' || echo "/panel")
           echo "=============================="
-          echo "TAILSCALE IP: $TAILSCALE_IP"
-          echo "PANEL URL: http://$TAILSCALE_IP:2053/panel"
-          echo "DEFAULT USER: admin"
-          echo "DEFAULT PASS: admin"
-          echo "SSH: ssh root@$TAILSCALE_IP"
+          echo "TAILSCALE IP : $TAILSCALE_IP"
+          echo "PANEL PORT   : $PORT"
+          echo "PANEL URL    : http://$TAILSCALE_IP:$PORT$WEBPATH"
+          echo "DEFAULT USER : admin"
+          echo "DEFAULT PASS : admin"
+          echo "SSH COMMAND  : ssh root@$TAILSCALE_IP"
           echo "=============================="
-          sudo x-ui setting -show 2>/dev/null || true
 
       - name: Keep Alive
         run: |
