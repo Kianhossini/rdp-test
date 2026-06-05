@@ -12,6 +12,12 @@ jobs:
       - name: Update packages
         run: sudo apt update && sudo apt install -y curl wget git jq sqlite3
 
+      - name: Enable IP Forwarding
+        run: |
+          echo 'net.ipv4.ip_forward = 1' | sudo tee -a /etc/sysctl.conf
+          echo 'net.ipv6.conf.all.forwarding = 1' | sudo tee -a /etc/sysctl.conf
+          sudo sysctl -p
+
       - name: Install Tailscale
         run: curl -fsSL https://tailscale.com/install.sh | sh
 
@@ -47,7 +53,6 @@ jobs:
           echo "USER         : $USER"
           echo "PASS         : $PASS"
           echo "SSH          : ssh root@$TAILSCALE_IP"
-          echo "SSH PASS     : 123456"
           echo "=============================="
 
       - name: Keep Alive
