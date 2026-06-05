@@ -1,4 +1,4 @@
-name: Ubuntu-Tailscale-3xUI
+name: Ubuntu-Ngrok-3xUI
 
 on:
   workflow_dispatch:
@@ -10,25 +10,7 @@ jobs:
 
     steps:
       - name: Update packages
-        run: sudo apt update && sudo apt install -y curl wget git openssh-server sudo
-
-      - name: Install Tailscale
-        run: curl -fsSL https://tailscale.com/install.sh | sh
-
-      - name: Connect Tailscale
-        run: sudo tailscale up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="gh-${{ github.run_id }}"
-
-      - name: Enable SSH
-        run: |
-          sudo systemctl enable ssh
-          sudo systemctl restart ssh
-
-      - name: Enable Root Login
-        run: |
-          echo "root:123456" | sudo chpasswd
-          sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-          sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-          sudo systemctl restart ssh
+        run: sudo apt update && sudo apt install -y curl wget git openssh-server sudo jq
 
       - name: Install 3x-ui
         run: echo "y" | curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh | sudo bash
@@ -40,36 +22,36 @@ jobs:
           sudo systemctl restart x-ui
           sleep 5
 
-      - name: Check x-ui Status
+      - name: Install ngrok
         run: |
-          echo "======= SERVICE STATUS ======="
-          sudo systemctl status x-ui || true
-          echo ""
-          echo "======= LISTENING PORTS ======="
-          ss -tlnp | grep x-ui || true
-          echo ""
-          echo "======= ALL OPEN PORTS ======="
-          ss -tlnp
-          echo ""
-          echo "======= X-UI SETTINGS ======="
-          sudo x-ui setting -show || true
-          echo ""
-          echo "======= X-UI LOGS ======="
-          sudo journalctl -u x-ui -n 30 --no-pager || true
+          curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt update && sudo apt install -y ngrok
+
+      - name: Start ngrok
+        run: |
+          ngrok authtoken "${{ secrets.NGROK_AUTH_TOKEN }}"
+          PANEL_PORT=$(ss -tlnp | grep x-ui | grep -oP '(?<=:)\d+' | head -1)
+          echo "Panel port: $PANEL_PORT"
+          nohup ngrok tcp $PANEL_PORT --log=stdout > /tmp/ngrok.log 2>&1 &
+          sleep 8
 
       - name: Show Info
         run: |
-          TAILSCALE_IP=$(tailscale ip -4)
-          PORT=$(sudo x-ui setting -show 2>/dev/null | grep -i port | head -1 | grep -oP '\d{4,5}' || echo "unknown")
-          WEBPATH=$(sudo x-ui setting -show 2>/dev/null | grep -i path | head -1 | awk '{print $NF}' || echo "/panel")
+          PANEL_PORT=$(ss -tlnp | grep x-ui | grep -oP '(?<=:)\d+' | head -1)
+          WEBPATH=$(sudo x-ui setting -show 2>/dev/null | grep -i webbasepath | awk '{print $NF}' || echo "panel")
+          NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+          HOST=$(echo $NGROK_URL | cut -d: -f2 | tr -d '/')
+          PORT=$(echo $NGROK_URL | cut -d: -f3)
           echo "=============================="
-          echo "TAILSCALE IP : $TAILSCALE_IP"
-          echo "PANEL PORT   : $PORT"
-          echo "PANEL URL    : http://$TAILSCALE_IP:$PORT$WEBPATH"
-          echo "DEFAULT USER : admin"
-          echo "DEFAULT PASS : admin"
-          echo "SSH COMMAND  : ssh root@$TAILSCALE_IP"
+          echo "PANEL URL : $NGROK_URL/$WEBPATH"
+          echo "NGROK HOST: $HOST"
+          echo "NGROK PORT: $PORT"
+          echo "USER      : admin"
+          echo "PASS      : admin"
           echo "=============================="
+          echo "VLESS CONFIG:"
+          echo "vless://UUID@$HOST:$PORT?path=%2Fws&security=none&encryption=none&type=tcp#kian"
 
       - name: Keep Alive
         run: |
