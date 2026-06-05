@@ -34,3 +34,22 @@ jobs:
         run: |
           nohup cloudflared tunnel --no-autoupdate --url http://localhost:80 > /tmp/cf.log 2>&1 &
           sleep 15
+          cat /tmp/cf.log
+
+      - name: Show Info
+        run: |
+          CF_URL=$(grep -o 'https://.*\.trycloudflare\.com' /tmp/cf.log | head -1)
+          USER=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webAdminUsername';")
+          PASS=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webAdminPassword';")
+          echo "=============================="
+          echo "PANEL URL : $CF_URL/panel"
+          echo "CF URL    : $CF_URL"
+          echo "USER      : $USER"
+          echo "PASS      : $PASS"
+          echo "=============================="
+
+      - name: Keep Alive
+        run: |
+          while true; do
+            sleep 300
+          done
