@@ -10,49 +10,65 @@ jobs:
 
     steps:
       - name: Update packages
-        run: sudo apt update && sudo apt install -y curl wget git jq sqlite3
-
-      - name: Enable IP Forwarding
-        run: |
-          echo 'net.ipv4.ip_forward = 1' | sudo tee -a /etc/sysctl.conf
-          echo 'net.ipv6.conf.all.forwarding = 1' | sudo tee -a /etc/sysctl.conf
-          sudo sysctl -p
+        run: sudo apt update && sudo apt install -y curl wget git openssh-server sudo
 
       - name: Install Tailscale
         run: curl -fsSL https://tailscale.com/install.sh | sh
 
       - name: Connect Tailscale
-        run: sudo tailscale up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="gh-${{ github.run_id }}" --advertise-exit-node
-
-      - name: Install 3x-ui
-        run: echo "y" | curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh | sudo bash
-
-      - name: Wait and Start x-ui
-        run: |
-          sleep 10
-          sudo systemctl restart x-ui
-          sleep 10
+        run: sudo tailscale up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="gh-${{ github.run_id }}"
 
       - name: Enable SSH
+        run: |
+          sudo systemctl enable ssh
+          sudo systemctl restart ssh
+
+      - name: Enable Root Login
         run: |
           echo "root:123456" | sudo chpasswd
           sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
           sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
           sudo systemctl restart ssh
 
+      - name: Install 3x-ui
+        run: echo "y" | curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh | sudo bash
+
+      - name: Wait and Start x-ui
+        run: |
+          sleep 5
+          sudo systemctl enable x-ui
+          sudo systemctl restart x-ui
+          sleep 5
+
+      - name: Check x-ui Status
+        run: |
+          echo "======= SERVICE STATUS ======="
+          sudo systemctl status x-ui || true
+          echo ""
+          echo "======= LISTENING PORTS ======="
+          ss -tlnp | grep x-ui || true
+          echo ""
+          echo "======= ALL OPEN PORTS ======="
+          ss -tlnp
+          echo ""
+          echo "======= X-UI SETTINGS ======="
+          sudo x-ui setting -show || true
+          echo ""
+          echo "======= X-UI LOGS ======="
+          sudo journalctl -u x-ui -n 30 --no-pager || true
+
       - name: Show Info
         run: |
           TAILSCALE_IP=$(tailscale ip -4)
-          PORT=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webPort';")
-          WEBPATH=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webBasePath';")
-          USER=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webAdminUsername';")
-          PASS=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webAdminPassword';")
+          PORT=$(sudo x-ui setting -show 2>/dev/null | grep -i port | head -1 | grep -oP '\d{4,5}' || echo "unknown")
+          WEBPATH=$(sudo x-ui setting -show 2>/dev/null | grep -i path | head -1 | awk '{print $NF}' || echo "/panel")
           echo "=============================="
           echo "TAILSCALE IP : $TAILSCALE_IP"
-          echo "PANEL URL    : http://$TAILSCALE_IP:$PORT/$WEBPATH"
-          echo "USER         : $USER"
-          echo "PASS         : $PASS"
-          echo "SSH          : ssh root@$TAILSCALE_IP"
+          echo "PANEL PORT   : $PORT"
+          echo "PANEL URL    : http://$TAILSCALE_IP:$PORT$WEBPATH"
+          echo "DEFAULT USER : admin"
+          echo "DEFAULT PASS : admin"
+          echo "SSH COMMAND  : ssh root@$TAILSCALE_IP"
           echo "=============================="
 
       - name: Keep Alive
