@@ -10,42 +10,20 @@ jobs:
 
     steps:
       - name: Update packages
-        run: sudo apt update && sudo apt install -y curl wget git jq sqlite3 nginx
+        run: sudo apt update && sudo apt install -y curl wget git jq sqlite3
 
       - name: Install 3x-ui
         run: echo "y" | curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh | sudo bash
 
-      - name: Wait and Start x-ui
+      - name: Set x-ui port to 80
         run: |
-          sleep 10
+          sudo sqlite3 /etc/x-ui/x-ui.db "update settings set value='80' where key='webPort';"
+          sudo sqlite3 /etc/x-ui/x-ui.db "update settings set value='/' where key='webBasePath';"
+          sleep 3
           sudo systemctl restart x-ui
           sleep 10
-
-      - name: Get Settings from DB
-        run: |
-          PORT=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webPort';")
-          WEBPATH=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webBasePath';")
-          echo "PORT=$PORT" >> $GITHUB_ENV
-          echo "WEBPATH=$WEBPATH" >> $GITHUB_ENV
-          echo "Port: $PORT | Path: $WEBPATH"
-
-      - name: Configure Nginx
-        run: |
-          sudo tee /etc/nginx/sites-available/default > /dev/null <<EOF
-          server {
-              listen 8080;
-              location / {
-                  proxy_pass http://127.0.0.1:$PORT;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade \$http_upgrade;
-                  proxy_set_header Connection "upgrade";
-                  proxy_set_header Host \$host;
-                  proxy_set_header X-Real-IP \$remote_addr;
-              }
-          }
-          EOF
-          sudo nginx -t
-          sudo systemctl restart nginx
+          echo "x-ui running on port:"
+          ss -tlnp | grep :80
 
       - name: Install cloudflared
         run: |
@@ -54,27 +32,5 @@ jobs:
 
       - name: Start Cloudflare Quick Tunnel
         run: |
-          nohup cloudflared tunnel --no-autoupdate --url http://localhost:8080 > /tmp/cf.log 2>&1 &
+          nohup cloudflared tunnel --no-autoupdate --url http://localhost:80 > /tmp/cf.log 2>&1 &
           sleep 15
-          cat /tmp/cf.log
-
-      - name: Show Info
-        run: |
-          CF_URL=$(grep -o 'https://.*\.trycloudflare\.com' /tmp/cf.log | head -1)
-          USER=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webAdminUsername';")
-          PASS=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webAdminPassword';")
-          echo "=============================="
-          echo "PANEL URL : $CF_URL/$WEBPATH"
-          echo "WS PATH   : /ws"
-          echo "CF URL    : $CF_URL"
-          echo "USER      : $USER"
-          echo "PASS      : $PASS"
-          echo "=============================="
-          echo "VLESS CONFIG:"
-          echo "vless://UUID@$(echo $CF_URL | sed 's/https:\/\///')?type=ws&path=%2Fws&security=tls&sni=$(echo $CF_URL | sed 's/https:\/\///')&fp=chrome#kian"
-
-      - name: Keep Alive
-        run: |
-          while true; do
-            sleep 300
-          done
