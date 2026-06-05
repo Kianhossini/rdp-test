@@ -1,4 +1,4 @@
-name: Ubuntu-Cloudflare-3xUI
+name: Ubuntu-Tailscale-3xUI
 
 on:
   workflow_dispatch:
@@ -12,40 +12,42 @@ jobs:
       - name: Update packages
         run: sudo apt update && sudo apt install -y curl wget git jq sqlite3
 
+      - name: Install Tailscale
+        run: curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Connect Tailscale
+        run: sudo tailscale up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="gh-${{ github.run_id }}" --advertise-exit-node
+
       - name: Install 3x-ui
         run: echo "y" | curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh | sudo bash
 
-      - name: Set x-ui port to 80
+      - name: Wait and Start x-ui
         run: |
-          sudo sqlite3 /etc/x-ui/x-ui.db "update settings set value='80' where key='webPort';"
-          sudo sqlite3 /etc/x-ui/x-ui.db "update settings set value='/' where key='webBasePath';"
-          sleep 3
+          sleep 10
           sudo systemctl restart x-ui
           sleep 10
-          echo "x-ui running on port:"
-          ss -tlnp | grep :80
 
-      - name: Install cloudflared
+      - name: Enable SSH
         run: |
-          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o cloudflared.deb
-          sudo dpkg -i cloudflared.deb
-
-      - name: Start Cloudflare Quick Tunnel
-        run: |
-          nohup cloudflared tunnel --no-autoupdate --url http://localhost:80 > /tmp/cf.log 2>&1 &
-          sleep 15
-          cat /tmp/cf.log
+          echo "root:123456" | sudo chpasswd
+          sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo systemctl restart ssh
 
       - name: Show Info
         run: |
-          CF_URL=$(grep -o 'https://.*\.trycloudflare\.com' /tmp/cf.log | head -1)
+          TAILSCALE_IP=$(tailscale ip -4)
+          PORT=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webPort';")
+          WEBPATH=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webBasePath';")
           USER=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webAdminUsername';")
           PASS=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webAdminPassword';")
           echo "=============================="
-          echo "PANEL URL : $CF_URL/panel"
-          echo "CF URL    : $CF_URL"
-          echo "USER      : $USER"
-          echo "PASS      : $PASS"
+          echo "TAILSCALE IP : $TAILSCALE_IP"
+          echo "PANEL URL    : http://$TAILSCALE_IP:$PORT/$WEBPATH"
+          echo "USER         : $USER"
+          echo "PASS         : $PASS"
+          echo "SSH          : ssh root@$TAILSCALE_IP"
+          echo "SSH PASS     : 123456"
           echo "=============================="
 
       - name: Keep Alive
