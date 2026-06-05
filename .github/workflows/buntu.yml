@@ -10,48 +10,41 @@ jobs:
 
     steps:
       - name: Update packages
-        run: sudo apt update && sudo apt install -y curl wget git openssh-server sudo jq
+        run: sudo apt update && sudo apt install -y curl wget git jq
 
       - name: Install 3x-ui
         run: echo "y" | curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh | sudo bash
 
       - name: Wait and Start x-ui
         run: |
-          sleep 5
-          sudo systemctl enable x-ui
+          sleep 10
           sudo systemctl restart x-ui
-          sleep 5
+          sleep 10
+          sudo x-ui setting -show
 
-      - name: Install ngrok
+      - name: Install and Start ngrok
         run: |
           curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
           echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
           sudo apt update && sudo apt install -y ngrok
-
-      - name: Start ngrok
-        run: |
           ngrok authtoken "${{ secrets.NGROK_AUTH_TOKEN }}"
-          PANEL_PORT=$(ss -tlnp | grep x-ui | grep -oP '(?<=:)\d+' | head -1)
-          echo "Panel port: $PANEL_PORT"
-          nohup ngrok tcp $PANEL_PORT --log=stdout > /tmp/ngrok.log 2>&1 &
-          sleep 8
+          PORT=$(sudo x-ui setting -show | grep -i port | grep -oP '\d{4,5}' | head -1)
+          echo "X-UI PORT: $PORT"
+          nohup ngrok tcp $PORT > /tmp/ngrok.log 2>&1 &
+          sleep 10
 
       - name: Show Info
         run: |
-          PANEL_PORT=$(ss -tlnp | grep x-ui | grep -oP '(?<=:)\d+' | head -1)
-          WEBPATH=$(sudo x-ui setting -show 2>/dev/null | grep -i webbasepath | awk '{print $NF}' || echo "panel")
+          curl -s http://localhost:4040/api/tunnels | jq .
           NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
           HOST=$(echo $NGROK_URL | cut -d: -f2 | tr -d '/')
           PORT=$(echo $NGROK_URL | cut -d: -f3)
+          WEBPATH=$(sudo x-ui setting -show | grep -i webbasepath | awk '{print $NF}')
           echo "=============================="
-          echo "PANEL URL : $NGROK_URL/$WEBPATH"
-          echo "NGROK HOST: $HOST"
-          echo "NGROK PORT: $PORT"
-          echo "USER      : admin"
-          echo "PASS      : admin"
+          echo "HOST    : $HOST"
+          echo "PORT    : $PORT"
+          echo "PANEL   : http://$HOST:$PORT/$WEBPATH"
           echo "=============================="
-          echo "VLESS CONFIG:"
-          echo "vless://UUID@$HOST:$PORT?path=%2Fws&security=none&encryption=none&type=tcp#kian"
 
       - name: Keep Alive
         run: |
