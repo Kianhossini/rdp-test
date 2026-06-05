@@ -1,4 +1,4 @@
-name: Ubuntu-Ngrok-3xUI
+name: Ubuntu-Cloudflare-3xUI
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ jobs:
 
     steps:
       - name: Update packages
-        run: sudo apt update && sudo apt install -y curl wget git jq
+        run: sudo apt update && sudo apt install -y curl wget git jq sqlite3
 
       - name: Install 3x-ui
         run: echo "y" | curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh | sudo bash
@@ -20,30 +20,36 @@ jobs:
           sleep 10
           sudo systemctl restart x-ui
           sleep 10
-          sudo x-ui setting -show
 
-      - name: Install and Start ngrok
+      - name: Get Port from DB
         run: |
-          curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
-          sudo apt update && sudo apt install -y ngrok
-          ngrok authtoken "${{ secrets.NGROK_AUTH_TOKEN }}"
-          PORT=$(sudo x-ui setting -show | grep -i port | grep -oP '\d{4,5}' | head -1)
-          echo "X-UI PORT: $PORT"
-          nohup ngrok tcp $PORT > /tmp/ngrok.log 2>&1 &
-          sleep 10
+          PORT=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webPort';" 2>/dev/null)
+          echo "PORT=$PORT" >> $GITHUB_ENV
+          echo "X-UI PORT FROM DB: $PORT"
+
+      - name: Install cloudflared
+        run: |
+          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o cloudflared.deb
+          sudo dpkg -i cloudflared.deb
+
+      - name: Start Cloudflare Quick Tunnel
+        run: |
+          echo "Starting tunnel on port: $PORT"
+          nohup cloudflared tunnel --no-autoupdate --url http://localhost:$PORT > /tmp/cf.log 2>&1 &
+          sleep 15
+          cat /tmp/cf.log
 
       - name: Show Info
         run: |
-          curl -s http://localhost:4040/api/tunnels | jq .
-          NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
-          HOST=$(echo $NGROK_URL | cut -d: -f2 | tr -d '/')
-          PORT=$(echo $NGROK_URL | cut -d: -f3)
-          WEBPATH=$(sudo x-ui setting -show | grep -i webbasepath | awk '{print $NF}')
+          CF_URL=$(grep -o 'https://.*\.trycloudflare\.com' /tmp/cf.log | head -1)
+          WEBPATH=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webBasePath';" 2>/dev/null)
+          USER=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webAdminUsername';" 2>/dev/null)
+          PASS=$(sudo sqlite3 /etc/x-ui/x-ui.db "select value from settings where key='webAdminPassword';" 2>/dev/null)
           echo "=============================="
-          echo "HOST    : $HOST"
-          echo "PORT    : $PORT"
-          echo "PANEL   : http://$HOST:$PORT/$WEBPATH"
+          echo "PANEL URL : $CF_URL/$WEBPATH"
+          echo "USER      : $USER"
+          echo "PASS      : $PASS"
+          echo "PORT      : $PORT"
           echo "=============================="
 
       - name: Keep Alive
